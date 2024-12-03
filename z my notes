@@ -1,0 +1,316 @@
+AWS Project: Architect and Build an End-to-End AWS Web Application from Scratch, Step by Step
+https://www.youtube.com/watch?v=7m_q1ldzw0U&list=PLwyXYwu8kL0wMalR9iXJIPfiMYWNFWQzx
+
+
+User  ---> Amplify  ---> API gateway  ---> Lambda  ---> DynamoDB
+                                            |
+                                           IAM
+
+Amplify = create and host webpage
+API gateway = public endpoint to trigger the Lambda Function
+Lambda = do some math (it is just some code response to a trigger)
+Dynamo DB = 
+
+----------------------------------------------------------
+
+<AMPLIFY:> to host the webpage
+
+    1) create a html file in local
+          zip it
+    
+    
+    2) goto AWS "Amplify"
+          choose "deploy without git"
+          upload the html zip file
+          save and deploy
+          once "deployed", there will be a domain name given
+
+
+<LAMBDA FUNCTION:> to do some math
+
+    3) goto AWS "Lambda"
+          choose "author from scratch"
+          assign a name
+          runtime, choose "python 3.9" (the latest)
+    
+    
+    4) update below code in Lambda "Code source" section 
+                after upload the code --> "deploy" it
+                after "deploy" --> click "create test event"
+                        assign a name for the "test event"
+                        keep "private"
+                        in "event JSON", keep 2 key:value only
+                              {
+                                "base": 2,
+                                "exponent": 3
+                              }
+                        click "Test" button, the output should show "statuscode:200"  --> this mean the Lambda function is working
+
+            -----------------------------------------
+            # import the JSON utility package
+            import json   
+            # import the Python math library (to do calculation)
+            import math                                          
+            
+            # define the handler function that the Lambda service will use an entry point (all lambda function need this)
+            def lambda_handler(event, context):
+            
+            # extract the two numbers from the Lambda service's event object (this is what getting us our math result)
+                mathResult = math.pow(int(event['base']), int(event['exponent']))
+            
+                # return a properly formatted JSON object
+                return {
+                'statusCode': 200,
+                'body': json.dumps('Your result is ' + str(mathResult))
+                }
+            -----------------------------------------
+
+<API GATEWAY:> the create a public endpoint to trigger the calculateion 
+
+        5) next, you need to invoke that math function by a "public endpoint" (because no one will go into your AWS console to invoke the function), so you need a "API gateway" to trigger that function to run.
+        
+              goto AWS "API gateway" ---> click "get start with API gateway"
+                    choose "REST API"
+                    assign a name
+                    click "create API"
+        
+              in the "Resources" page --> click "create method"
+                    in the "create method" page, in "Method type", input "POST" ( = user send in number) 
+        
+                                        --------------------------------
+                                                      HTTP method:
+                                        1. **DELETE**: Delete something.
+                                        2. **GET**: Get information, Read.
+                                        3. **HEAD**: Get information without the actual data.
+                                        4. **OPTIONS**: Get the options for communication.
+                                        5. **PATCH**: Partially update something.
+                                        6. **POST**: Create something new.
+                                        7. **PUT**: Update or create something.     
+                                        --------------------------------
+        
+                    for "lambda function", choose the one you have created
+                    click "create method"
+        
+        
+              you are back to the "Resources" page, at the top right corner, click the "Enable CORS" button (purpose is to allow webapp run in one origin to be able to access resources in different origin)
+                    click "POST"
+                    click "save"
+        
+        
+              you are back to the "Resources" page, at the top right corner, click the "Deploy API" button 
+                    in "stage" --> "new stage
+                    stage name --> dev
+        
+        
+              you will find a "Invoke URL" , save this URL in your notepad  --> API gateway - https://qvsatyz34f.execute-api.us-east-1.amazonaws.com/dev
+        
+              go back to "Resources" page and test if the API is working or not:
+                    select "POST"
+                    click the tab "Test"
+                    in the "test method" "request body" --> use the same code which we use for the Lambda Function --> click "test"
+                    the result should show statuscode:200
+                                  {
+                                    "base": 2,
+                                    "exponent": 4
+                                  }
+
+<DYNAMODB:> create a database to store the number
+
+      6) create a DynamoDB table: 
+              goto DynamoDB
+              create table
+              assign a name
+              partition key --> ID
+              click "create table"
+              in the "General Information", click "Additional info", copy the ARN to your notepad  --> ARN - arn:aws:dynamodb:us-east-1:445567104844:table/cloudproject02
+
+      7) you need to give permission to Lambda Function to write to the DynamoDB table:
+              goto Lambda Function
+              find the "Configuration" tab
+              at the left side, selete "Permission"
+              click the link below the "role name" --> this will link you to IAM page
+
+              at the middle right, click "Add permission" --> "create inline policy"
+              choose "JSON"
+                            ---------------------------------
+                             {
+                              "Version": "2012-10-17",
+                              "Statement": [
+                                  {
+                                      "Sid": "VisualEditor0",
+                                      "Effect": "Allow",                ---> allow all below different action in DynamoDB, so the Lambda Function can have permission to do all of these things
+                                      "Action": [
+                                          "dynamodb:PutItem",
+                                          "dynamodb:DeleteItem",
+                                          "dynamodb:GetItem",
+                                          "dynamodb:Scan",
+                                          "dynamodb:Query",
+                                          "dynamodb:UpdateItem"
+                                      ],
+                                      "Resource": "YOUR-TABLE-ARN"       ---> change the ARN you copy from DynamoDB when create table
+                                  }
+                                  ]
+                              }
+                            ---------------------------------
+              click "next"
+              in "review & create" pages, assign a name to the policy
+              click "create policy"
+              
+      8) now you can update Lambda Function to go write the database:  
+              goto Lambda Function
+              in the "Code source" , paste below code to the "lambda_function.py"
+
+                                          ------------------------
+                                          # import the JSON utility package
+                                          import json
+                                          # import the Python math library
+                                          import math
+                                          
+                                          # import the AWS SDK (for Python the package name is boto3)
+                                          import boto3
+                                          # import two packages to help us with dates and date formatting
+                                          from time import gmtime, strftime
+                                          
+                                          # create a DynamoDB object using the AWS SDK
+                                          dynamodb = boto3.resource('dynamodb')
+                                          # use the DynamoDB object to select our table
+                                          table = dynamodb.Table('PowerOfMathDatabase')                 ----------------> caution!!! your dynamodb table name has to match this, or change this code to match your table
+                                          # store the current time in a human readable format in a variable
+                                          now = strftime("%a, %d %b %Y %H:%M:%S +0000", gmtime())
+                                          
+                                          # define the handler function that the Lambda service will use an entry point
+                                          def lambda_handler(event, context):
+                                          
+                                          # extract the two numbers from the Lambda service's event object
+                                              mathResult = math.pow(int(event['base']), int(event['exponent']))
+                                          
+                                          # write result and time to the DynamoDB table using the object we instantiated and save response in a variable
+                                              response = table.put_item(
+                                                  Item={
+                                                      'ID': str(mathResult),
+                                                      'LatestGreetingTime':now
+                                                      })
+                                          
+                                          # return a properly formatted JSON object
+                                              return {
+                                              'statusCode': 200,
+                                              'body': json.dumps('Your result is ' + str(mathResult))
+                                              }
+                                          ------------------------
+            click "deploy"
+            click "test"
+            test should show statuscode:200
+
+            goto dynamoDB table
+            click "explore table item"
+            you should see the update from "Item returned"
+
+
+<UPDATE THE HTML PAGE WITH THE COMPLETE WEBPAGE THAT HAVE THE BOX FOR PEOPLE TO INPUT THE NUMBER> 
+            
+      9) upload the final html code in html.file
+          zip it again
+
+                                    ------------------------------
+                                    <!DOCTYPE html>
+                                    <html>
+                                    <head>
+                                        <meta charset="UTF-8">
+                                        <title>To the Power of Math!</title>
+                                        <!-- Styling for the client UI -->
+                                        <style>
+                                        h1 {
+                                            color: #FFFFFF;
+                                            font-family: system-ui;
+                                    		margin-left: 20px;
+                                            }
+                                    	body {
+                                            background-color: #222629;
+                                            }
+                                        label {
+                                            color: #86C232;
+                                            font-family: system-ui;
+                                            font-size: 20px;
+                                            margin-left: 20px;
+                                    		margin-top: 20px;
+                                            }
+                                         button {
+                                            background-color: #86C232;
+                                    		border-color: #86C232;
+                                    		color: #FFFFFF;
+                                            font-family: system-ui;
+                                            font-size: 20px;
+                                    		font-weight: bold;
+                                            margin-left: 30px;
+                                    		margin-top: 20px;
+                                    		width: 140px;
+                                            }
+                                    	 input {
+                                            color: #222629;
+                                            font-family: system-ui;
+                                            font-size: 20px;
+                                            margin-left: 10px;
+                                    		margin-top: 20px;
+                                    		width: 100px;
+                                            }
+                                        </style>
+                                        <script>
+                                            // callAPI function that takes the base and exponent numbers as parameters
+                                            var callAPI = (base,exponent)=>{
+                                                // instantiate a headers object
+                                                var myHeaders = new Headers();
+                                                // add content type header to object
+                                                myHeaders.append("Content-Type", "application/json");
+                                                // using built in JSON utility package turn object to string and store in a variable
+                                                var raw = JSON.stringify({"base":base,"exponent":exponent});
+                                                // create a JSON object with parameters for API call and store in a variable
+                                                var requestOptions = {
+                                                    method: 'POST',
+                                                    headers: myHeaders,
+                                                    body: raw,
+                                                    redirect: 'follow'
+                                                };
+                                                // make API call with parameters and use promises to get response
+                                                fetch("https://qvsatyz34f.execute-api.us-east-1.amazonaws.com/dev", requestOptions)        ------------> put your API gateway URL here
+                                                .then(response => response.text())
+                                                .then(result => alert(JSON.parse(result).body))
+                                                .catch(error => console.log('error', error));
+                                            }
+                                        </script>
+                                    </head>
+                                    <body>
+                                        <h1>TO THE POWER OF MATH!</h1>
+                                    	<form>
+                                            <label>Base number:</label>
+                                            <input type="text" id="base">
+                                            <label>...to the power of:</label>
+                                            <input type="text" id="exponent">
+                                            <!-- set button onClick method to call function we defined passing input values as parameters -->
+                                            <button type="button" onclick="callAPI(document.getElementById('base').value,document.getElementById('exponent').value)">CALCULATE</button>
+                                        </form>
+                                    </body>
+                                    </html>
+                                    ------------------------------
+
+
+      10) goto AWS "Amplify"
+                in the "Hosting" page, click "deploy updates" 
+                drag and drop the updated zip file to the box
+                click "save and deploy"
+                open the "Domain" URL, the webpage should be updated 
+
+      FINISH
+
+
+
+
+
+
+
+
+
+
+
+
+
+
